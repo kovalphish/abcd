@@ -215,7 +215,7 @@
         <div class="cart-section">
             {% for item in items %}
             <div class="cart-item">
-                <img src="{{ item.product.image }}" alt="{{ item.product.name }}" class="cart-item-image">
+                <img src="{{ url_for('static', filename='uploads/' + item.product.image) }}" alt="{{ item.product.name }}" class="cart-item-image" onerror="this.src='{{ url_for('static', filename='default.png') }}'">
                 <div class="cart-item-info">
                     <div class="cart-item-name">{{ item.product.name }}</div>
                     <div class="cart-item-price">{{ item.product.price }} ₽</div>

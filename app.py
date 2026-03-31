@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
@@ -11,11 +11,14 @@ app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-# Default image in base64 format
-DEFAULT_IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+# Default image path
+DEFAULT_IMAGE = "default.png"
+
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 db = SQLAlchemy(app)
 
@@ -27,7 +30,7 @@ class Product(db.Model):
     price = db.Column(db.Float, nullable=False)
     stock = db.Column(db.Integer, default=0)
     description = db.Column(db.Text)
-    image = db.Column(db.Text, default='default.png')  # base64 encoded image
+    image = db.Column(db.String(255), default='default.png')  # filename of uploaded image
 
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -87,6 +90,14 @@ def products():
 def product_detail(pid):
     product = Product.query.get_or_404(pid)
     return render_template('product_detali.html', product=product)
+
+@app.route('/static/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/static/<path:filename>')
+def static_files(filename):
+    return send_from_directory(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static'), filename)
 
 @app.route('/cart')
 def cart():
@@ -224,22 +235,16 @@ def admin_product_add():
         description = request.form.get('description')
         
         image = request.files.get('image')
-        image_data = DEFAULT_IMAGE
-        
-        print(f"DEBUG: image = {image}")
-        if image:
-            print(f"DEBUG: image.filename = {image.filename}")
-            print(f"DEBUG: allowed_file = {allowed_file(image.filename)}")
+        image_filename = DEFAULT_IMAGE
         
         if image and allowed_file(image.filename):
-            # Читаем файл и конвертируем в base64
-            image_bytes = image.read()
-            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            # Определяем MIME тип
-            ext = image.filename.rsplit('.', 1)[1].lower()
-            mime_type = f"image/{ext}" if ext != 'jpg' else 'image/jpeg'
-            image_data = f"data:{mime_type};base64,{image_base64}"
-            print(f"DEBUG: Изображение конвертировано в base64")
+            filename = secure_filename(image.filename)
+            # Добавляем уникальный префикс чтобы избежать конфликтов
+            import uuid
+            ext = filename.rsplit('.', 1)[1].lower()
+            unique_filename = f"{uuid.uuid4().hex}.{ext}"
+            image.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_filename))
+            image_filename = unique_filename
         
         product = Product(
             name=name,
@@ -247,7 +252,7 @@ def admin_product_add():
             price=price,
             stock=stock,
             description=description,
-            image=image_data
+            image=image_filename
         )
         db.session.add(product)
         db.session.commit()
@@ -270,14 +275,18 @@ def admin_product_edit(pid):
         
         image = request.files.get('image')
         if image and allowed_file(image.filename):
-            # Читаем файл и конвертируем в base64
-            image_bytes = image.read()
-            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            # Определяем MIME тип
-            ext = image.filename.rsplit('.', 1)[1].lower()
-            mime_type = f"image/{ext}" if ext != 'jpg' else 'image/jpeg'
-            image_data = f"data:{mime_type};base64,{image_base64}"
-            product.image = image_data
+            # Удаляем старое изображение если оно не default
+            if product.image and product.image != DEFAULT_IMAGE:
+                old_path = os.path.join(app.config['UPLOAD_FOLDER'], product.image)
+                if os.path.exists(old_path):
+                    os.remove(old_path)
+            
+            filename = secure_filename(image.filename)
+            import uuid
+            ext = filename.rsplit('.', 1)[1].lower()
+            unique_filename = f"{uuid.uuid4().hex}.{ext}"
+            image.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_filename))
+            product.image = unique_filename
         
         db.session.commit()
         flash('Товар обновлен', 'success')
