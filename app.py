@@ -120,6 +120,8 @@ def update_cart():
             elif product_id in cart:
                 del cart[product_id]
     session['cart'] = cart
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return {'status': 'ok'}
     return redirect(url_for('cart'))
 
 @app.route('/remove_from_cart/<int:pid>')

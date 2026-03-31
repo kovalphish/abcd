@@ -222,8 +222,8 @@
                             <td>{{ order.total }} ₽</td>
                             <td>
                                 <span class="status-badge status-{{ order.status }}">{{ order.status }}</span>
-                                <form method="POST" action="/admin/order/status/{{ order.id }}" style="display: inline; margin-left: 0.5rem;">
-                                    <select name="status" onchange="this.form.submit()">
+                                <form method="POST" action="/admin/order/status/{{ order.id }}" style="display: inline; margin-left: 0.5rem;" id="status-form-{{ order.id }}">
+                                    <select name="status" onchange="document.getElementById('status-form-{{ order.id }}').submit()">
                                         <option value="new" {% if order.status == 'new' %}selected{% endif %}>Новый</option>
                                         <option value="processing" {% if order.status == 'processing' %}selected{% endif %}>В обработке</option>
                                         <option value="completed" {% if order.status == 'completed' %}selected{% endif %}>Выполнен</option>
