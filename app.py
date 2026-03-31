@@ -1,8 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import os
-import base64
+import os, uuid
 from functools import wraps
 from werkzeug.utils import secure_filename
 
@@ -12,17 +11,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:/
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
-
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-
-# Default image path
 DEFAULT_IMAGE = "default.png"
-
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
 db = SQLAlchemy(app)
 
-# Модели
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
@@ -30,7 +23,7 @@ class Product(db.Model):
     price = db.Column(db.Float, nullable=False)
     stock = db.Column(db.Integer, default=0)
     description = db.Column(db.Text)
-    image = db.Column(db.String(255), default='default.png')  # filename of uploaded image
+    image = db.Column(db.String(255), default='default.png')
 
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -60,11 +53,9 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Создание БД
 with app.app_context():
     db.create_all()
 
-# Клиентская часть
 @app.route('/')
 def index():
     products = Product.query.limit(8).all()
@@ -74,16 +65,13 @@ def index():
 def products():
     category = request.args.get('category')
     search = request.args.get('search')
-    
     query = Product.query
     if category:
         query = query.filter(Product.category == category)
     if search:
         query = query.filter(Product.name.contains(search))
-    
     products = query.all()
     categories = db.session.query(Product.category).distinct().all()
-    
     return render_template('products.html', products=products, categories=categories, search=search)
 
 @app.route('/product/<int:pid>')
@@ -148,12 +136,10 @@ def checkout():
         name = request.form.get('name')
         phone = request.form.get('phone')
         address = request.form.get('address')
-        
         cart_items = session.get('cart', {})
         if not cart_items:
             flash('Корзина пуста', 'error')
             return redirect(url_for('cart'))
-        
         total = 0
         items = []
         for pid, qty in cart_items.items():
@@ -161,46 +147,23 @@ def checkout():
             if product and product.stock >= qty:
                 subtotal = product.price * qty
                 total += subtotal
-                items.append({
-                    'product_id': product.id,
-                    'name': product.name,
-                    'quantity': qty,
-                    'price': product.price
-                })
+                items.append({'product_id': product.id, 'name': product.name, 'quantity': qty, 'price': product.price})
                 product.stock -= qty
             else:
                 flash(f'Товар "{product.name}" недоступен в нужном количестве', 'error')
                 return redirect(url_for('cart'))
-        
-        order = Order(
-            customer_name=name,
-            customer_phone=phone,
-            customer_address=address,
-            total=total,
-            status='new'
-        )
+        order = Order(customer_name=name, customer_phone=phone, customer_address=address, total=total, status='new')
         db.session.add(order)
         db.session.flush()
-        
         for item in items:
-            order_item = OrderItem(
-                order_id=order.id,
-                product_id=item['product_id'],
-                product_name=item['name'],
-                quantity=item['quantity'],
-                price=item['price']
-            )
+            order_item = OrderItem(order_id=order.id, product_id=item['product_id'], product_name=item['name'], quantity=item['quantity'], price=item['price'])
             db.session.add(order_item)
-        
         db.session.commit()
         session['cart'] = {}
-        
         flash(f'Заказ #{order.id} успешно оформлен!', 'success')
         return redirect(url_for('index'))
-    
     return render_template('checkout.html')
 
-# Админка с паролем
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
@@ -233,65 +196,45 @@ def admin_product_add():
         price = float(request.form.get('price'))
         stock = int(request.form.get('stock', 0))
         description = request.form.get('description')
-        
         image = request.files.get('image')
         image_filename = DEFAULT_IMAGE
-        
         if image and allowed_file(image.filename):
             filename = secure_filename(image.filename)
-            # Добавляем уникальный префикс чтобы избежать конфликтов
-            import uuid
             ext = filename.rsplit('.', 1)[1].lower()
             unique_filename = f"{uuid.uuid4().hex}.{ext}"
             image.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_filename))
             image_filename = unique_filename
-        
-        product = Product(
-            name=name,
-            category=category,
-            price=price,
-            stock=stock,
-            description=description,
-            image=image_filename
-        )
+        product = Product(name=name, category=category, price=price, stock=stock, description=description, image=image_filename)
         db.session.add(product)
         db.session.commit()
         flash('Товар добавлен', 'success')
         return redirect(url_for('admin'))
-    
     return render_template('product_form.html', title='Добавить товар', product=None)
 
 @app.route('/admin/product/edit/<int:pid>', methods=['GET', 'POST'])
 @login_required
 def admin_product_edit(pid):
     product = Product.query.get_or_404(pid)
-    
     if request.method == 'POST':
         product.name = request.form.get('name')
         product.category = request.form.get('category')
         product.price = float(request.form.get('price'))
         product.stock = int(request.form.get('stock', 0))
         product.description = request.form.get('description')
-        
         image = request.files.get('image')
         if image and allowed_file(image.filename):
-            # Удаляем старое изображение если оно не default
             if product.image and product.image != DEFAULT_IMAGE:
                 old_path = os.path.join(app.config['UPLOAD_FOLDER'], product.image)
                 if os.path.exists(old_path):
                     os.remove(old_path)
-            
             filename = secure_filename(image.filename)
-            import uuid
             ext = filename.rsplit('.', 1)[1].lower()
             unique_filename = f"{uuid.uuid4().hex}.{ext}"
             image.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_filename))
             product.image = unique_filename
-        
         db.session.commit()
         flash('Товар обновлен', 'success')
         return redirect(url_for('admin'))
-    
     return render_template('product_form.html', title='Редактировать товар', product=product)
 
 @app.route('/admin/product/delete/<int:pid>')
