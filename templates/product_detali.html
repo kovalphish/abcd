@@ -44,7 +44,7 @@
 
         <div class="product-detail">
             <div class="product-image">
-                <img src="/static/uploads/{{ product.image }}" onerror="this.src='/static/images/default.png'">
+                <img src="{{ product.image }}" onerror="this.src='/static/images/default.png'">
             </div>
             <div class="product-info">
                 <h1>{{ product.name }}</h1>
