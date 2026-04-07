@@ -6,21 +6,23 @@ from functools import wraps
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-12345')
 
-# Исправление для PostgreSQL Vercel
-if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
-    app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://')
+# ✅ VERCEL POSTGRESQL AUTO FIX
+database_url = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://')
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
+app.config['UPLOAD_FOLDER'] = '/tmp'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 DEFAULT_IMAGE = "default.png"
-
-# Исправление для Vercel: отключаем создание папок, если мы в среде Vercel
-if not os.environ.get('VERCEL'):
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 db = SQLAlchemy(app)
 
@@ -61,21 +63,19 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Создаем таблицы
-@app.before_request
-def initialize_db():
-    if not hasattr(app, 'db_initialized'):
-        with app.app_context():
-            try:
-                db.create_all()
-                app.db_initialized = True
-            except Exception as e:
-                print(f"DB init: {str(e)}")
-                app.db_initialized = True
+# ✅ ИНИЦИАЛИЗАЦИЯ БД ТОЛЬКО ПРИ ЗАПУСКЕ
+with app.app_context():
+    try:
+        db.create_all()
+    except Exception:
+        pass
 
 @app.route('/')
 def index():
-    products = Product.query.limit(8).all()
+    try:
+        products = Product.query.limit(8).all()
+    except Exception:
+        products = []
     return render_template('index.html', products=products)
 
 @app.route('/products')
@@ -283,9 +283,8 @@ def admin_order_status(oid):
     flash('Статус заказа обновлен', 'success')
     return redirect(url_for('admin'))
 
+# ✅ ОБЯЗАТЕЛЬНО ДЛЯ VERCEL
+application = app
+
 if __name__ == '__main__':
     app.run(debug=True)
-
-# Обязательно для работы Vercel с Python
-else:
-    application = app
