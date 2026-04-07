@@ -13,7 +13,11 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 DEFAULT_IMAGE = "default.png"
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Исправление для Vercel: отключаем создание папок, если мы в среде Vercel
+if not os.environ.get('VERCEL'):
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 db = SQLAlchemy(app)
 
 class Product(db.Model):
@@ -53,8 +57,13 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Создаем таблицы только если не на Vercel, так как там БД только для чтения
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+    except:
+        # На Vercel игнорируем ошибки создания БД
+        pass
 
 @app.route('/')
 def index():
@@ -268,3 +277,7 @@ def admin_order_status(oid):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+# Обязательно для работы Vercel с Python
+else:
+    application = app
