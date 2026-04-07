@@ -61,13 +61,17 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Создаем таблицы только если не на Vercel, так как там БД только для чтения
-with app.app_context():
-    try:
-        db.create_all()
-    except:
-        # На Vercel игнорируем ошибки создания БД
-        pass
+# Создаем таблицы
+@app.before_request
+def initialize_db():
+    if not hasattr(app, 'db_initialized'):
+        with app.app_context():
+            try:
+                db.create_all()
+                app.db_initialized = True
+            except Exception as e:
+                print(f"DB init: {str(e)}")
+                app.db_initialized = True
 
 @app.route('/')
 def index():
